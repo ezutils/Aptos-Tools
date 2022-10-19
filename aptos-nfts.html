@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="">
+  <meta name="author" content="">
+  <title>Aptos NFT scanner</title>
+  <!-- Bootstrap core CSS -->
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.min.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <style>
+    [v-cloak] {display: none;}
+    .card{outline: solid 1px #ccc; border: none;}
+  </style>
+</head>
+<body>
+
+  <!-- Page Content -->
+  <div class="container mt-5" id="app">
+    <h1>Aptos NFT scanner ({{chain}})</h1>
+    <div class="row">
+    	<div class="col-md-12">
+    		<form @submit.prevent="scanNFT()">
+          <div class="form-group">
+            <label for="chain">Network</label>
+            <select class="form-control" id="chain" v-model="chain">
+              <option value="mainnet">Mainnet</option>
+              <option value="testnet">Testnet</option>
+            </select>
+          </div>
+    			<div class="input-group mb-3">
+    			  <input onfocus="this.select()" type="text" class="form-control form-control-lg" placeholder="Input Aptos account address" required v-model="address" aria-label="Aptos address" aria-describedby="basic-addon2">
+    			  <div class="input-group-append">
+    			    <button class="btn btn-lg btn-primary" type="submit">Scan NFTs</button>
+    			  </div>
+    			</div>
+    		</form>
+        <div v-show="address != ''">View in Aptos explorer: <a :href="'https://explorer.aptoslabs.com/account/' + address" target="_blank">{{address}}</a></div>
+    	</div>
+    </div>
+    <h2 class="my-4">Your NFTs</h2>
+    <hr>
+    <div v-show="is_loading">Scanning, please wait...</div>
+    <div v-show="no_data">No NFT data.</div>
+    <div class="row">
+      <!-- Blog Entries Column -->
+ 
+    <!-- Blog Post -->
+    <div class="card col-md-2 mb-4" v-for="_nft in nfts">
+      <img v-show="_nft.image != 'undefined'" class="card-img-top mt-1" :src="_nft.image">
+      <div class="card-body">
+        <h6 class="card-title">{{_nft.name}}</h6>
+        <p class="card-text">{{_nft.collection_name}}<br>
+        <span class="text-muted">Amount: {{_nft.amount}}</span>
+        </p>
+      </div>
+    </div>
+    
+
+  </div>
+  
+  
+    <!-- /.row -->
+  </div>
+  <!-- /.container -->
+
+  <!-- Bootstrap core JavaScript -->
+  <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
+
+  <script type="text/javascript">
+  	const app = new Vue({
+  		'el': '#app',
+  		data: {
+        chain: 'mainnet',
+  			address: '',
+        graphql_uri: 'https://wqb9q2zgw7i7-mainnet.hasura.app/v1/graphql',
+  			nfts: [],
+        is_loading: false,
+        no_data: false,
+  		},
+  		methods: {
+  			scanNFT: async function () {
+  				try {
+            this.nfts = [];
+            this.is_loading = true;
+            this.no_data = false;
+            if (this.address.startsWith('0x0')) this.address = this.address.replace('0x0', '0x');
+  					let _rs = await axios.post(this.graphql_uri, 
+              `{\"operationName\":\"TokensData\",\"variables\":{\"owner_address\":\"${this.address}\"},\"query\":\"query TokensData($owner_address: String) {\\n  current_token_ownerships(\\n    where: {owner_address: {_eq: $owner_address}, amount: {_gt: \\\"0\\\"}}\\n  ) {\\n    token_data_id_hash\\n    name\\n    collection_name\\n    table_type\\n    property_version\\n    amount\\n    __typename\\n  }\\n}\"}`,
+                {
+                  headers: { 'Content-Type': 'application/json; charset=utf-8' }
+                }
+              );
+            if (_rs.data) {
+              this.nfts = _rs.data.data.current_token_ownerships;
+              if (this.nfts.length <= 0) {
+                this.no_data = true;
+              }
+              for (let i = 0, l = this.nfts.length; i < l; i++) {
+                (async () => {
+                  let _item = await axios.post(this.graphql_uri, 
+                  `{\"operationName\":\"TokenData\",\"variables\":{\"token_id\":\"${this.nfts[i].token_data_id_hash}\"},\"query\":\"query TokenData($token_id: String) {\\n  current_token_datas(where: {token_data_id_hash: {_eq: $token_id}}) {\\n    token_data_id_hash\\n    name\\n    collection_name\\n    creator_address\\n    default_properties\\n    largest_property_version\\n    maximum\\n    metadata_uri\\n    payee_address\\n    royalty_points_denominator\\n    royalty_points_numerator\\n    supply\\n    __typename\\n  }\\n}\"}`,
+                  {
+                    headers: { 'Content-Type': 'application/json; charset=utf-8' }
+                  });
+                  let matched_nft = null;
+                  let matched_index = null;
+                  this.nfts.map((nft, index) => {
+                    if (nft.token_data_id_hash == this.nfts[i].token_data_id_hash) {
+                      try {
+                        nft.image = _item.data.data.current_token_datas[0].metadata_uri;
+                        Vue.set(this.nfts, index, nft);
+                        return;
+                      } catch (error) {
+                        console.log(error);
+                      }
+                    }
+                  });
+                })();
+              }
+            }
+  				} catch (e) { console.log(e); }
+          this.is_loading = false;
+          location.href = '#' + this.address;
+  			}
+  		},
+      mounted: function() {
+        if (location.hash != '' && location.hash.indexOf('0x') > -1) {
+          this.address = location.hash.replace('#', '');
+          this.scanNFT();
+        }
+      },
+      watch: {
+        chain: function (_newChain, _oldChain) {
+          if (_newChain == 'mainnet') {
+            this.graphql_uri = 'https://wqb9q2zgw7i7-mainnet.hasura.app/v1/graphql';
+          }
+          if (_newChain == 'testnet') {
+            this.graphql_uri = 'https://indexer-testnet.staging.gcp.aptosdev.com/v1/graphql';
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
